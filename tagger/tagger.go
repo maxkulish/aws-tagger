@@ -33,6 +33,7 @@ func (t *AWSResourceTagger) TagAllResources() {
 		t.tagElastiCacheResources,
 		t.tagRDSResources,
 		t.tagGlueResources,
+		t.tagVPCResources,
 	}
 
 	for _, tagger := range taggers {

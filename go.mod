@@ -13,6 +13,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/opensearch v1.44.0
 	github.com/aws/aws-sdk-go-v2/service/rds v1.89.2
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.66.3
+	github.com/aws/aws-sdk-go-v2/service/vpclattice v1.12.5
 	github.com/aws/smithy-go v1.22.0
 )
 
