@@ -24,6 +24,8 @@ github.com/aws/aws-sdk-go-v2/service/ec2 v1.187.1 h1:g6N2LDa3UuNR8CZvTYuXUKzfCD6
 github.com/aws/aws-sdk-go-v2/service/ec2 v1.187.1/go.mod h1:0A17IIeys01WfjDKehspGP+Cyo/YH/eNADIbEbRS9yM=
 github.com/aws/aws-sdk-go-v2/service/elasticache v1.43.2 h1:PN61rmiIx5Kx2BTBVwNhQdIDUsGExelKNQb0OnB8X4Y=
 github.com/aws/aws-sdk-go-v2/service/elasticache v1.43.2/go.mod h1:GfBXRmZeda5Rt0KxjAtjxB6wVguM3K8tvGA/SEI51bc=
+github.com/aws/aws-sdk-go-v2/service/glue v1.101.2 h1:0gvXLmkF95b45HD/s0tenCZPRH7fv+C9CDwzyKVnUTg=
+github.com/aws/aws-sdk-go-v2/service/glue v1.101.2/go.mod h1:m9O1Fp+iJWbt7QmRTR/Zfh6HJpMEKNf0L8/chyp7bu8=
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.12.0 h1:TToQNkvGguu209puTojY/ozlqy2d/SFNcoLIqTFi42g=
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.12.0/go.mod h1:0jp+ltwkf+SwG2fm/PKo8t4y8pJSgOCO4D8Lz3k0aHQ=
 github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.4.4 h1:aaPpoG15S2qHkWm4KlEyF01zovK1nW4BBbyXuHNSE90=
