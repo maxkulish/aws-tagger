@@ -1,6 +1,7 @@
 package tagger
 
 import (
+	"fmt"
 	"log"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -11,6 +12,7 @@ import (
 
 // tagVPCResources tags VPC resources according to MAP 2.0 rules
 func (t *AWSResourceTagger) tagVPCResources() {
+	fmt.Println("=====================================")
 	log.Println("Tagging VPC resources according to MAP 2.0 rules...")
 
 	// Tag Transit Gateway and its attachments
