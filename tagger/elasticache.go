@@ -1,6 +1,7 @@
 package tagger
 
 import (
+	"fmt"
 	"log"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -10,6 +11,7 @@ import (
 
 // tagElastiCacheResources tags ElastiCache clusters and replication groups
 func (t *AWSResourceTagger) tagElastiCacheResources() {
+	fmt.Println("=====================================")
 	log.Println("Tagging ElastiCache resources...")
 	client := elasticache.NewFromConfig(t.cfg)
 
