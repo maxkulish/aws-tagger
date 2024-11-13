@@ -30,6 +30,7 @@ func (t *AWSResourceTagger) TagAllResources() {
 		t.tagS3Buckets,
 		t.tagCloudWatchResources,
 		t.tagOpenSearchResources,
+		t.tagElastiCacheResources,
 	}
 
 	for _, tagger := range taggers {

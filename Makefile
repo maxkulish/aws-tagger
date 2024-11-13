@@ -60,6 +60,11 @@ vet:
 	@echo "Running go vet..."
 	$(GO) vet ./...
 
+## Run go mod tidy
+tidy:
+	@echo "Running go mod tidy..."
+	$(GO) mod tidy
+
 ## Run golint
 lint:
 	@echo "Running golint..."

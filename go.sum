@@ -22,6 +22,8 @@ github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.42.4 h1:c60zN18a3zQsBWdwE/v5x
 github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.42.4/go.mod h1:fkETEwhdw2tOqu5m0Xa3wimV3PLDaiGqNrVZ3MJ7zOc=
 github.com/aws/aws-sdk-go-v2/service/ec2 v1.187.1 h1:g6N2LDa3UuNR8CZvTYuXUKzfCD6S1iqRIsDFkbtwu0Y=
 github.com/aws/aws-sdk-go-v2/service/ec2 v1.187.1/go.mod h1:0A17IIeys01WfjDKehspGP+Cyo/YH/eNADIbEbRS9yM=
+github.com/aws/aws-sdk-go-v2/service/elasticache v1.43.2 h1:PN61rmiIx5Kx2BTBVwNhQdIDUsGExelKNQb0OnB8X4Y=
+github.com/aws/aws-sdk-go-v2/service/elasticache v1.43.2/go.mod h1:GfBXRmZeda5Rt0KxjAtjxB6wVguM3K8tvGA/SEI51bc=
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.12.0 h1:TToQNkvGguu209puTojY/ozlqy2d/SFNcoLIqTFi42g=
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.12.0/go.mod h1:0jp+ltwkf+SwG2fm/PKo8t4y8pJSgOCO4D8Lz3k0aHQ=
 github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.4.4 h1:aaPpoG15S2qHkWm4KlEyF01zovK1nW4BBbyXuHNSE90=
