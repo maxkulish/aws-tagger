@@ -1,13 +1,14 @@
 package main
 
 import (
-	"aws-tagger/tagger"
 	"context"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"strings"
+
+	"github.com/maxkulish/aws-tagger/tagger"
 )
 
 // Configuration defaults
