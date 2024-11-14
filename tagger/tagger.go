@@ -36,6 +36,7 @@ func (t *AWSResourceTagger) TagAllResources() {
 		t.tagGlueResources,
 		t.tagVPCResources,
 		t.tagAthenaResources,
+		t.tagELBResources,
 	}
 
 	for _, tagger := range taggers {
