@@ -15,10 +15,11 @@ import (
 
 // AWSResourceTagger handles AWS resource tagging operations
 type AWSResourceTagger struct {
-	ctx     context.Context
-	cfg     aws.Config
-	tags    map[string]string
-	awsTags []types.Tag
+	ctx       context.Context
+	cfg       aws.Config
+	tags      map[string]string
+	awsTags   []types.Tag
+	accountID string
 }
 
 // TagAllResources tags all supported resources
@@ -34,6 +35,7 @@ func (t *AWSResourceTagger) TagAllResources() {
 		t.tagRDSResources,
 		t.tagGlueResources,
 		t.tagVPCResources,
+		t.tagAthenaResources,
 	}
 
 	for _, tagger := range taggers {
