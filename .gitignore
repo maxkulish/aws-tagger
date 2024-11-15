@@ -25,3 +25,6 @@ go.work.sum
 .env
 
 bin/
+
+# Ignore coverage output
+coverage.*
