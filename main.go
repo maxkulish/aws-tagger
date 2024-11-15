@@ -94,7 +94,10 @@ func main() {
 
 	// Validate tags before proceeding
 	if err := validateTags(flags.tags); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		_, err := fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		if err != nil {
+			return
+		}
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -122,10 +125,10 @@ func main() {
 
 	ctx := context.Background()
 
-	tagger, err := tagger.NewAWSResourceTagger(ctx, flags.profile, flags.region, allTags)
+	awsResourceTagger, err := tagger.NewAWSResourceTagger(ctx, flags.profile, flags.region, allTags)
 	if err != nil {
-		log.Fatalf("Failed to create tagger: %v", err)
+		log.Fatalf("Failed to create awsResourceTagger: %v", err)
 	}
 
-	tagger.TagAllResources()
+	awsResourceTagger.TagAllResources()
 }
