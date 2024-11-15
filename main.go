@@ -127,5 +127,5 @@ func main() {
 	awsResourceTagger.TagAllResources()
 	elapsed := time.Since(start)
 
-	log.Printf("Time elapsed to tag all resources: %s", elapsed)
+	fmt.Printf("Tagging took %vm %vs\n", int(elapsed.Minutes()), int(elapsed.Seconds())%60)
 }
