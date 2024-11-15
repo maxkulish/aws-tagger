@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -22,29 +23,48 @@ type AWSResourceTagger struct {
 	accountID string
 }
 
-// TagAllResources tags all supported resources
+const apiThrottleSleepDuration = time.Second
+
+// TagAllResources concurrently tags all supported resources
 func (t *AWSResourceTagger) TagAllResources() {
 	log.Println("Starting MAP 2.0 resource tagging process...")
+	var wg sync.WaitGroup
+	resourceTaggers := map[string]func(){
+		"EC2":         t.tagEC2Resources,
+		"S3Buckets":   t.tagS3Buckets,
+		"CloudWatch":  t.tagCloudWatchResources,
+		"OpenSearch":  t.tagOpenSearchResources,
+		"ElastiCache": t.tagElastiCacheResources,
+		"RDS":         t.tagRDSResources,
+		"Glue":        t.tagGlueResources,
+		"VPC":         t.tagVPCResources,
+		"Athena":      t.tagAthenaResources,
+		"ELB":         t.tagELBResources,
+	}
+	errorsChannel := make(chan error, len(resourceTaggers))
 
-	taggers := []func(){
-		t.tagEC2Resources,
-		t.tagS3Buckets,
-		t.tagCloudWatchResources,
-		t.tagOpenSearchResources,
-		t.tagElastiCacheResources,
-		t.tagRDSResources,
-		t.tagGlueResources,
-		t.tagVPCResources,
-		t.tagAthenaResources,
-		t.tagELBResources,
+	for key, tagger := range resourceTaggers {
+		wg.Add(1)
+		go t.executeWithThrottleConcurrent(tagger, &wg, errorsChannel, key)
 	}
 
-	for _, tagger := range taggers {
-		tagger()
-		time.Sleep(time.Second) // Prevent API throttling
+	wg.Wait()
+	close(errorsChannel)
+	for err := range errorsChannel {
+		if err != nil {
+			log.Printf("Error in tagging process: %v", err)
+		}
 	}
-
 	log.Println("Completed MAP 2.0 resource tagging process")
+}
+
+// executeWithThrottleConcurrent runs a function in a goroutine and then sleeps to prevent API throttling
+func (t *AWSResourceTagger) executeWithThrottleConcurrent(f func(), wg *sync.WaitGroup, errorsChannel chan<- error, resourceType string) {
+	defer wg.Done()
+	log.Printf("Starting tagging for resource type: %s", resourceType)
+	f()
+	log.Printf("Completed tagging for resource type: %s", resourceType)
+	time.Sleep(apiThrottleSleepDuration)
 }
 
 // NewAWSResourceTagger creates a new tagger instance
