@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/smithy-go"
 )
 
@@ -28,6 +29,12 @@ const apiThrottleSleepDuration = time.Second
 // TagAllResources concurrently tags all supported resources
 func (t *AWSResourceTagger) TagAllResources() {
 	log.Println("Starting MAP 2.0 resource tagging process...")
+
+	if err := t.validateSSOSession(); err != nil {
+		log.Fatalf("SSO session validation failed: %v", err)
+		return
+	}
+
 	var wg sync.WaitGroup
 	resourceTaggers := map[string]func(){
 		"EC2":         t.tagEC2Resources,
@@ -65,6 +72,16 @@ func (t *AWSResourceTagger) executeWithThrottleConcurrent(f func(), wg *sync.Wai
 	f()
 	log.Printf("Completed tagging for resource type: %s", resourceType)
 	time.Sleep(apiThrottleSleepDuration)
+}
+
+// validateSSOSession validates the SSO session by making a simple AWS API call
+func (t *AWSResourceTagger) validateSSOSession() error {
+	stsClient := sts.NewFromConfig(t.cfg)
+	_, err := stsClient.GetCallerIdentity(t.ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return fmt.Errorf("unable to validate SSO session: %v", err)
+	}
+	return nil
 }
 
 // NewAWSResourceTagger creates a new tagger instance
