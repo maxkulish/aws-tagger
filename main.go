@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/maxkulish/aws-tagger/tagger"
 )
@@ -91,7 +92,6 @@ func parseFlags() *CLIFlags {
 
 func main() {
 	flags := parseFlags()
-
 	// Validate tags before proceeding
 	if err := validateTags(flags.tags); err != nil {
 		_, err := fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -101,34 +101,31 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
-
 	// Log the configuration being used
 	log.Printf("Using AWS Profile: %s", flags.profile)
 	log.Printf("Using AWS Region: %s", flags.region)
-
 	// Parse custom tags and merge with mapTags
 	customTags := parseCustomTags(flags.tags)
 	allTags := make(map[string]string)
-
 	// Copy mapTags to allTags
 	for k, v := range mapTags {
 		allTags[k] = v
 	}
-
 	// Merge custom tags (will override mapTags if there are duplicates)
 	for k, v := range customTags {
 		allTags[k] = v
 	}
-
 	// Log the tags being applied
 	log.Printf("Tags to be applied: %v", allTags)
-
 	ctx := context.Background()
 
+	start := time.Now()
 	awsResourceTagger, err := tagger.NewAWSResourceTagger(ctx, flags.profile, flags.region, allTags)
 	if err != nil {
 		log.Fatalf("Failed to create awsResourceTagger: %v", err)
 	}
-
 	awsResourceTagger.TagAllResources()
+	elapsed := time.Since(start)
+
+	log.Printf("Time elapsed to tag all resources: %s", elapsed)
 }
