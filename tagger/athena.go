@@ -1,15 +1,26 @@
 package tagger
 
 import (
+	"context"
 	"fmt"
+	"log"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/athena"
 	athenatypes "github.com/aws/aws-sdk-go-v2/service/athena/types"
-	"log"
 )
 
+// AthenaAPI interface for Athena client operations
+type AthenaAPI interface {
+	ListWorkGroups(ctx context.Context, params *athena.ListWorkGroupsInput, optFns ...func(*athena.Options)) (*athena.ListWorkGroupsOutput, error)
+	ListDataCatalogs(ctx context.Context, params *athena.ListDataCatalogsInput, optFns ...func(*athena.Options)) (*athena.ListDataCatalogsOutput, error)
+	ListPreparedStatements(ctx context.Context, params *athena.ListPreparedStatementsInput, optFns ...func(*athena.Options)) (*athena.ListPreparedStatementsOutput, error)
+	ListQueryExecutions(ctx context.Context, params *athena.ListQueryExecutionsInput, optFns ...func(*athena.Options)) (*athena.ListQueryExecutionsOutput, error)
+	TagResource(ctx context.Context, params *athena.TagResourceInput, optFns ...func(*athena.Options)) (*athena.TagResourceOutput, error)
+}
+
 // tagAthenaWorkgroups tags Athena workgroups
-func (t *AWSResourceTagger) tagAthenaWorkgroups(client *athena.Client) {
+func (t *AWSResourceTagger) tagAthenaWorkgroups(client AthenaAPI) {
 	input := &athena.ListWorkGroupsInput{}
 	for {
 		workgroups, err := client.ListWorkGroups(t.ctx, input)
@@ -41,7 +52,7 @@ func (t *AWSResourceTagger) tagAthenaWorkgroups(client *athena.Client) {
 }
 
 // tagAthenaDataCatalogs tags Athena data catalogs
-func (t *AWSResourceTagger) tagAthenaDataCatalogs(client *athena.Client) {
+func (t *AWSResourceTagger) tagAthenaDataCatalogs(client AthenaAPI) {
 	input := &athena.ListDataCatalogsInput{}
 	for {
 		catalogs, err := client.ListDataCatalogs(t.ctx, input)
@@ -73,7 +84,7 @@ func (t *AWSResourceTagger) tagAthenaDataCatalogs(client *athena.Client) {
 }
 
 // tagAthenaPreparedStatements tags Athena prepared statements
-func (t *AWSResourceTagger) tagAthenaPreparedStatements(client *athena.Client) {
+func (t *AWSResourceTagger) tagAthenaPreparedStatements(client AthenaAPI) {
 	workgroups, err := client.ListWorkGroups(t.ctx, &athena.ListWorkGroupsInput{})
 	if err != nil {
 		t.handleError(err, "all", "Athena Workgroups for Prepared Statements")
@@ -113,7 +124,7 @@ func (t *AWSResourceTagger) tagAthenaPreparedStatements(client *athena.Client) {
 }
 
 // tagAthenaQueryExecutions tags Athena query executions
-func (t *AWSResourceTagger) tagAthenaQueryExecutions(client *athena.Client) {
+func (t *AWSResourceTagger) tagAthenaQueryExecutions(client AthenaAPI) {
 	workgroups, err := client.ListWorkGroups(t.ctx, &athena.ListWorkGroupsInput{})
 	if err != nil {
 		t.handleError(err, "all", "Athena Workgroups for Query Executions")
