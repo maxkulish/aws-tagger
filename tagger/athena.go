@@ -73,7 +73,7 @@ func (t *AWSResourceTagger) tagAthenaWorkgroups(client AthenaAPI) error {
 				continue
 			}
 
-			arn := t.buildAthenaWorkgroupARN(wgName)
+			arn := t.buildCompoundARN(AthenaWorkgroup, wgName)
 			if err := t.tagResource(client, arn, wgName, "workgroup"); err != nil {
 				// Log the error with more details
 				log.Printf("Warning: failed to tag workgroup %s (ARN: %s): %v", wgName, arn, err)
@@ -103,7 +103,7 @@ func (t *AWSResourceTagger) tagAthenaDataCatalogs(client AthenaAPI) error {
 			catalogName := aws.ToString(catalog.CatalogName)
 			// Removed the AwsDataCatalog skip condition
 
-			arn := t.buildAthenaCatalogARN(catalogName)
+			arn := t.buildCompoundARN(AthenaCatalog, catalogName)
 			if err := t.tagResource(client, arn, catalogName, "data catalog"); err != nil {
 				// Log the error with more details
 				log.Printf("Warning: failed to tag data catalog %s (ARN: %s): %v", catalogName, arn, err)

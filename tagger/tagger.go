@@ -22,6 +22,7 @@ type AWSResourceTagger struct {
 	tags      map[string]string
 	awsTags   []types.Tag
 	accountID string
+	region    string
 }
 
 const apiThrottleSleepDuration = time.Second
@@ -43,9 +44,9 @@ func (t *AWSResourceTagger) TagAllResources() {
 		//"OpenSearch":  t.tagOpenSearchResources,
 		//"ElastiCache": t.tagElastiCacheResources,
 		//"RDS":         t.tagRDSResources,
-		//"Glue":        t.tagGlueResources,
+		"Glue": t.tagGlueResources,
 		//"VPC":         t.tagVPCResources,
-		"Athena": t.tagAthenaResources,
+		//"Athena": t.tagAthenaResources,
 		//"ELB":         t.tagELBResources,
 	}
 	errorsChannel := make(chan error, len(resourceTaggers))
@@ -126,7 +127,8 @@ func NewAWSResourceTagger(ctx context.Context, profile, region string, tags map[
 		cfg:       cfg,
 		tags:      tags,
 		awsTags:   awsTags,
-		accountID: accountID, // Set the account ID
+		accountID: accountID,
+		region:    region,
 	}, nil
 }
 
