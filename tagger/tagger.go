@@ -46,8 +46,8 @@ func (t *AWSResourceTagger) TagAllResources() {
 		"OpenSearch":  t.tagOpenSearchResources,
 		"RDS":         t.tagRDSResources,
 		"ElastiCache": t.tagElastiCacheResources,
+		"ELB":         t.tagELBResources,
 		//"VPC":         t.tagVPCResources,
-		//"ELB":         t.tagELBResources,
 	}
 	errorsChannel := make(chan error, len(resourceTaggers))
 
