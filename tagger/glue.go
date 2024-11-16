@@ -1,3 +1,4 @@
+// Package tagger
 package tagger
 
 import (
@@ -24,6 +25,9 @@ type GlueMetrics struct {
 	CrawlersFound     int32
 	CrawlersTagged    int32
 	CrawlersFailed    int32
+	TriggersFound     int32
+	TriggersTagged    int32
+	TriggersFailed    int32
 }
 
 // tagGlueResources tags AWS Glue resources
@@ -34,19 +38,11 @@ func (t *AWSResourceTagger) tagGlueResources() {
 	metrics := &GlueMetrics{}
 
 	// Tag all supported Glue resource types
-	//t.tagGlueDatabases(client, metrics)
-	//t.tagGlueConnections(client, metrics)
+	t.tagGlueDatabases(client, metrics)
+	t.tagGlueConnections(client, metrics)
 	t.tagGlueCrawlers(client, metrics)
-	//t.tagGlueJobs(client, metrics)
-	//t.tagGlueTriggers(client)
-	//t.tagGlueWorkflows(client)
-	//t.tagGlueBlueprints(client)
-	//t.tagGlueMLTransforms(client)
-	//t.tagGlueDataQualityRulesets(client)
-	//t.tagGlueSchemaRegistries(client)
-	//t.tagGlueSchemas(client)
-	//t.tagGlueDevEndpoints(client)
-	//t.tagGlueInteractiveSessions(client)
+	t.tagGlueJobs(client, metrics)
+	t.tagGlueTriggers(client, metrics)
 
 	log.Println("Completed tagging Glue resources")
 }
@@ -273,5 +269,70 @@ func (t *AWSResourceTagger) tagCrawler(client *glue.Client, crawler gluetypes.Cr
 	}
 
 	log.Printf("Successfully tagged Glue crawler: %s", crawlerName)
+	return nil
+}
+
+// tagGlueTriggers tags AWS Glue triggers with metrics
+func (t *AWSResourceTagger) tagGlueTriggers(client *glue.Client, metrics *GlueMetrics) {
+	log.Println("Tagging Glue triggers...")
+
+	// Initialize paging parameters
+	maxResults := int32(100)
+	var nextToken *string
+
+	for {
+		input := &glue.GetTriggersInput{
+			MaxResults: aws.Int32(maxResults),
+			NextToken:  nextToken,
+		}
+
+		triggers, err := client.GetTriggers(t.ctx, input)
+		if err != nil {
+			t.handleError(err, "all", "Glue Triggers")
+			return
+		}
+
+		triggerCount := int32(len(triggers.Triggers))
+		atomic.AddInt32(&metrics.TriggersFound, triggerCount)
+		log.Printf("Found %d Glue triggers to tag in this batch", triggerCount)
+
+		for _, trigger := range triggers.Triggers {
+			if err := t.tagTrigger(client, trigger); err != nil {
+				log.Printf("Error tagging trigger %s: %v", aws.ToString(trigger.Name), err)
+				atomic.AddInt32(&metrics.TriggersFailed, 1)
+				continue
+			}
+			atomic.AddInt32(&metrics.TriggersTagged, 1)
+		}
+
+		// Check if there are more triggers to process
+		if triggers.NextToken == nil {
+			break
+		}
+		nextToken = triggers.NextToken
+	}
+
+	log.Printf("Completed tagging Glue triggers. Found: %d, Tagged: %d, Failed: %d",
+		metrics.TriggersFound, metrics.TriggersTagged, metrics.TriggersFailed)
+}
+
+// tagTrigger tags a single Glue trigger
+func (t *AWSResourceTagger) tagTrigger(client *glue.Client, trigger gluetypes.Trigger) error {
+	triggerName := aws.ToString(trigger.Name)
+
+	// Build trigger ARN using the predefined pattern
+	resourceArn := t.buildCompoundARN(GlueTrigger, triggerName)
+	log.Printf("Trigger ARN: %s", resourceArn)
+
+	// Apply tags
+	_, err := client.TagResource(t.ctx, &glue.TagResourceInput{
+		ResourceArn: aws.String(resourceArn),
+		TagsToAdd:   t.convertToGlueTags(),
+	})
+	if err != nil {
+		return fmt.Errorf("error tagging trigger %s: %w", triggerName, err)
+	}
+
+	log.Printf("Successfully tagged Glue trigger: %s", triggerName)
 	return nil
 }
