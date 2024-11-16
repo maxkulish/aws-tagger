@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/athena"
@@ -14,151 +15,104 @@ import (
 type AthenaAPI interface {
 	ListWorkGroups(ctx context.Context, params *athena.ListWorkGroupsInput, optFns ...func(*athena.Options)) (*athena.ListWorkGroupsOutput, error)
 	ListDataCatalogs(ctx context.Context, params *athena.ListDataCatalogsInput, optFns ...func(*athena.Options)) (*athena.ListDataCatalogsOutput, error)
-	ListPreparedStatements(ctx context.Context, params *athena.ListPreparedStatementsInput, optFns ...func(*athena.Options)) (*athena.ListPreparedStatementsOutput, error)
-	ListQueryExecutions(ctx context.Context, params *athena.ListQueryExecutionsInput, optFns ...func(*athena.Options)) (*athena.ListQueryExecutionsOutput, error)
 	TagResource(ctx context.Context, params *athena.TagResourceInput, optFns ...func(*athena.Options)) (*athena.TagResourceOutput, error)
 }
 
+// validateTags checks if tags meet Athena's requirements
+func (t *AWSResourceTagger) validateTags() error {
+	if len(t.tags) > 50 {
+		return fmt.Errorf("number of tags exceeds maximum limit of 50")
+	}
+
+	for key, value := range t.tags {
+		if strings.HasPrefix(key, "aws:") {
+			return fmt.Errorf("tag key cannot start with 'aws:': %s", key)
+		}
+		if len(key) < 1 || len(key) > 128 {
+			return fmt.Errorf("tag key length must be between 1 and 128 characters: %s", key)
+		}
+		if len(value) > 256 {
+			return fmt.Errorf("tag value length must not exceed 256 characters for key: %s", key)
+		}
+	}
+	return nil
+}
+
 // tagAthenaWorkgroups tags Athena workgroups
-func (t *AWSResourceTagger) tagAthenaWorkgroups(client AthenaAPI) {
+func (t *AWSResourceTagger) tagAthenaWorkgroups(client AthenaAPI) error {
 	input := &athena.ListWorkGroupsInput{}
 	for {
 		workgroups, err := client.ListWorkGroups(t.ctx, input)
 		if err != nil {
-			t.handleError(err, "all", "Athena Workgroups")
-			return
+			return fmt.Errorf("failed to list workgroups: %w", err)
 		}
+
 		for _, workgroup := range workgroups.WorkGroups {
 			wgName := aws.ToString(workgroup.Name)
-			if wgName == "primary" {
+			if wgName == "primary" { // Skip the primary workgroup
 				continue
 			}
-			arn := fmt.Sprintf("arn:aws:athena:%s:%s:workgroup/%s", t.cfg.Region, t.accountID, wgName)
-			_, err = client.TagResource(t.ctx, &athena.TagResourceInput{
-				ResourceARN: aws.String(arn),
-				Tags:        t.convertToAthenaTags(),
-			})
-			if err != nil {
-				t.handleError(err, wgName, "Athena Workgroup")
+
+			arn := fmt.Sprintf("arn:aws:athena:%s:%s:workgroup/%s",
+				t.cfg.Region, t.accountID, wgName)
+
+			if err := t.tagResource(client, arn, wgName, "workgroup"); err != nil {
+				log.Printf("Warning: failed to tag workgroup %s: %v", wgName, err)
 				continue
 			}
-			log.Printf("Successfully tagged Athena workgroup: %s", wgName)
 		}
+
 		if workgroups.NextToken == nil {
 			break
 		}
 		input.NextToken = workgroups.NextToken
 	}
+	return nil
 }
 
 // tagAthenaDataCatalogs tags Athena data catalogs
-func (t *AWSResourceTagger) tagAthenaDataCatalogs(client AthenaAPI) {
+func (t *AWSResourceTagger) tagAthenaDataCatalogs(client AthenaAPI) error {
 	input := &athena.ListDataCatalogsInput{}
 	for {
 		catalogs, err := client.ListDataCatalogs(t.ctx, input)
 		if err != nil {
-			t.handleError(err, "all", "Athena Data Catalogs")
-			return
+			return fmt.Errorf("failed to list data catalogs: %w", err)
 		}
+
 		for _, catalog := range catalogs.DataCatalogsSummary {
 			catalogName := aws.ToString(catalog.CatalogName)
-			if catalogName == "AwsDataCatalog" {
+			if catalogName == "AwsDataCatalog" { // Skip the default AWS catalog
 				continue
 			}
-			arn := fmt.Sprintf("arn:aws:athena:%s:%s:datacatalog/%s", t.cfg.Region, t.accountID, catalogName)
-			_, err = client.TagResource(t.ctx, &athena.TagResourceInput{
-				ResourceARN: aws.String(arn),
-				Tags:        t.convertToAthenaTags(),
-			})
-			if err != nil {
-				t.handleError(err, catalogName, "Athena Data Catalog")
+
+			arn := fmt.Sprintf("arn:aws:athena:%s:%s:datacatalog/%s",
+				t.cfg.Region, t.accountID, catalogName)
+
+			if err := t.tagResource(client, arn, catalogName, "data catalog"); err != nil {
+				log.Printf("Warning: failed to tag data catalog %s: %v", catalogName, err)
 				continue
 			}
-			log.Printf("Successfully tagged Athena data catalog: %s", catalogName)
 		}
+
 		if catalogs.NextToken == nil {
 			break
 		}
 		input.NextToken = catalogs.NextToken
 	}
+	return nil
 }
 
-// tagAthenaPreparedStatements tags Athena prepared statements
-func (t *AWSResourceTagger) tagAthenaPreparedStatements(client AthenaAPI) {
-	workgroups, err := client.ListWorkGroups(t.ctx, &athena.ListWorkGroupsInput{})
+// tagResource handles the actual tagging operation with error handling
+func (t *AWSResourceTagger) tagResource(client AthenaAPI, arn, resourceName, resourceType string) error {
+	_, err := client.TagResource(t.ctx, &athena.TagResourceInput{
+		ResourceARN: aws.String(arn),
+		Tags:        t.convertToAthenaTags(),
+	})
 	if err != nil {
-		t.handleError(err, "all", "Athena Workgroups for Prepared Statements")
-		return
+		return err
 	}
-	for _, workgroup := range workgroups.WorkGroups {
-		wgName := aws.ToString(workgroup.Name)
-		input := &athena.ListPreparedStatementsInput{
-			WorkGroup: aws.String(wgName),
-		}
-		for {
-			statements, err := client.ListPreparedStatements(t.ctx, input)
-			if err != nil {
-				t.handleError(err, wgName, "Athena Prepared Statements")
-				continue
-			}
-			for _, statement := range statements.PreparedStatements {
-				statementName := aws.ToString(statement.StatementName)
-				arn := fmt.Sprintf("arn:aws:athena:%s:%s:workgroup/%s/preparedstatement/%s",
-					t.cfg.Region, t.accountID, wgName, statementName)
-				_, err = client.TagResource(t.ctx, &athena.TagResourceInput{
-					ResourceARN: aws.String(arn),
-					Tags:        t.convertToAthenaTags(),
-				})
-				if err != nil {
-					t.handleError(err, statementName, "Athena Prepared Statement")
-					continue
-				}
-				log.Printf("Successfully tagged Athena prepared statement: %s in workgroup %s", statementName, wgName)
-			}
-			if statements.NextToken == nil {
-				break
-			}
-			input.NextToken = statements.NextToken
-		}
-	}
-}
-
-// tagAthenaQueryExecutions tags Athena query executions
-func (t *AWSResourceTagger) tagAthenaQueryExecutions(client AthenaAPI) {
-	workgroups, err := client.ListWorkGroups(t.ctx, &athena.ListWorkGroupsInput{})
-	if err != nil {
-		t.handleError(err, "all", "Athena Workgroups for Query Executions")
-		return
-	}
-	for _, workgroup := range workgroups.WorkGroups {
-		wgName := aws.ToString(workgroup.Name)
-		input := &athena.ListQueryExecutionsInput{
-			WorkGroup: aws.String(wgName),
-		}
-		for {
-			executions, err := client.ListQueryExecutions(t.ctx, input)
-			if err != nil {
-				t.handleError(err, wgName, "Athena Query Executions")
-				continue
-			}
-			for _, queryID := range executions.QueryExecutionIds {
-				arn := fmt.Sprintf("arn:aws:athena:%s:%s:workgroup/%s/query/%s", t.cfg.Region, t.accountID, wgName, queryID)
-				_, err = client.TagResource(t.ctx, &athena.TagResourceInput{
-					ResourceARN: aws.String(arn),
-					Tags:        t.convertToAthenaTags(),
-				})
-				if err != nil {
-					t.handleError(err, queryID, "Athena Query Execution")
-					continue
-				}
-				log.Printf("Successfully tagged Athena query execution: %s in workgroup %s", queryID, wgName)
-			}
-			if executions.NextToken == nil {
-				break
-			}
-			input.NextToken = executions.NextToken
-		}
-	}
+	log.Printf("Successfully tagged Athena %s: %s", resourceType, resourceName)
+	return nil
 }
 
 // convertToAthenaTags converts the common tags map to Athena-specific tags
@@ -173,13 +127,33 @@ func (t *AWSResourceTagger) convertToAthenaTags() []athenatypes.Tag {
 	return athenaTags
 }
 
-// tagAthenaResources tags all Athena resources
+// tagAthenaResources is the main entry point that creates and uses the client
 func (t *AWSResourceTagger) tagAthenaResources() {
-	log.Println("Tagging Athena resources...")
 	client := athena.NewFromConfig(t.cfg)
-	t.tagAthenaWorkgroups(client)
-	t.tagAthenaDataCatalogs(client)
-	t.tagAthenaPreparedStatements(client)
-	t.tagAthenaQueryExecutions(client)
+	t.tagAthenaResourcesWithClient(client)
+}
+
+// tagAthenaResourcesWithClient handles the actual tagging logic with a provided client
+func (t *AWSResourceTagger) tagAthenaResourcesWithClient(client AthenaAPI) {
+	log.Println("Tagging Athena resources...")
+
+	// Validate tags before proceeding
+	if err := t.validateTags(); err != nil {
+		log.Printf("Error: Invalid tags configuration: %v", err)
+		// Even with validation error, we should log completion
+		log.Println("Completed tagging Athena resources")
+		return
+	}
+
+	// Tag workgroups
+	if err := t.tagAthenaWorkgroups(client); err != nil {
+		log.Printf("Error tagging Athena workgroups: %v", err)
+	}
+
+	// Tag data catalogs
+	if err := t.tagAthenaDataCatalogs(client); err != nil {
+		log.Printf("Error tagging Athena data catalogs: %v", err)
+	}
+
 	log.Println("Completed tagging Athena resources")
 }
