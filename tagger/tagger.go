@@ -37,16 +37,16 @@ func (t *AWSResourceTagger) TagAllResources() {
 
 	var wg sync.WaitGroup
 	resourceTaggers := map[string]func(){
-		"EC2":         t.tagEC2Resources,
-		"S3Buckets":   t.tagS3Buckets,
-		"CloudWatch":  t.tagCloudWatchResources,
-		"OpenSearch":  t.tagOpenSearchResources,
-		"ElastiCache": t.tagElastiCacheResources,
-		"RDS":         t.tagRDSResources,
-		"Glue":        t.tagGlueResources,
-		"VPC":         t.tagVPCResources,
-		"Athena":      t.tagAthenaResources,
-		"ELB":         t.tagELBResources,
+		//"EC2":         t.tagEC2Resources,
+		//"S3Buckets":   t.tagS3Buckets,
+		//"CloudWatch":  t.tagCloudWatchResources,
+		//"OpenSearch":  t.tagOpenSearchResources,
+		//"ElastiCache": t.tagElastiCacheResources,
+		//"RDS":         t.tagRDSResources,
+		//"Glue":        t.tagGlueResources,
+		//"VPC":         t.tagVPCResources,
+		"Athena": t.tagAthenaResources,
+		//"ELB":         t.tagELBResources,
 	}
 	errorsChannel := make(chan error, len(resourceTaggers))
 
@@ -84,8 +84,19 @@ func (t *AWSResourceTagger) validateSSOSession() error {
 	return nil
 }
 
+// getAccountID retrieves the AWS account ID using STS
+func getAccountID(ctx context.Context, cfg aws.Config) (string, error) {
+	stsClient := sts.NewFromConfig(cfg)
+	result, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return "", fmt.Errorf("unable to get caller identity: %w", err)
+	}
+	return *result.Account, nil
+}
+
 // NewAWSResourceTagger creates a new tagger instance
 func NewAWSResourceTagger(ctx context.Context, profile, region string, tags map[string]string) (*AWSResourceTagger, error) {
+	// Load AWS configuration
 	cfg, err := config.LoadDefaultConfig(ctx,
 		config.WithRegion(region),
 		config.WithSharedConfigProfile(profile),
@@ -94,6 +105,14 @@ func NewAWSResourceTagger(ctx context.Context, profile, region string, tags map[
 		return nil, fmt.Errorf("unable to load SDK config: %v", err)
 	}
 
+	// Get AWS Account ID
+	accountID, err := getAccountID(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get AWS account ID: %v", err)
+	}
+	log.Printf("Using AWS Account ID: %s", accountID)
+
+	// Convert tags to AWS format
 	awsTags := make([]types.Tag, 0, len(tags))
 	for k, v := range tags {
 		awsTags = append(awsTags, types.Tag{
@@ -103,10 +122,11 @@ func NewAWSResourceTagger(ctx context.Context, profile, region string, tags map[
 	}
 
 	return &AWSResourceTagger{
-		ctx:     ctx,
-		cfg:     cfg,
-		tags:    tags,
-		awsTags: awsTags,
+		ctx:       ctx,
+		cfg:       cfg,
+		tags:      tags,
+		awsTags:   awsTags,
+		accountID: accountID, // Set the account ID
 	}, nil
 }
 

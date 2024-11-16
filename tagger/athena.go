@@ -38,6 +38,26 @@ func (t *AWSResourceTagger) validateTags() error {
 	return nil
 }
 
+// buildAthenaWorkgroupARN builds the correct ARN format for Athena workgroups
+func (t *AWSResourceTagger) buildAthenaWorkgroupARN(workgroupName string) string {
+	// Add debug logging to verify the values
+	arn := fmt.Sprintf("arn:aws:athena:%s:%s:workgroup/%s",
+		t.cfg.Region,
+		t.accountID,
+		workgroupName)
+	return arn
+}
+
+// buildAthenaCatalogARN builds the correct ARN format for Athena data catalogs
+func (t *AWSResourceTagger) buildAthenaCatalogARN(catalogName string) string {
+	// Add debug logging to verify the values
+	arn := fmt.Sprintf("arn:aws:athena:%s:%s:datacatalog/%s",
+		t.cfg.Region,
+		t.accountID,
+		catalogName)
+	return arn
+}
+
 // tagAthenaWorkgroups tags Athena workgroups
 func (t *AWSResourceTagger) tagAthenaWorkgroups(client AthenaAPI) error {
 	input := &athena.ListWorkGroupsInput{}
@@ -53,11 +73,10 @@ func (t *AWSResourceTagger) tagAthenaWorkgroups(client AthenaAPI) error {
 				continue
 			}
 
-			arn := fmt.Sprintf("arn:aws:athena:%s:%s:workgroup/%s",
-				t.cfg.Region, t.accountID, wgName)
-
+			arn := t.buildAthenaWorkgroupARN(wgName)
 			if err := t.tagResource(client, arn, wgName, "workgroup"); err != nil {
-				log.Printf("Warning: failed to tag workgroup %s: %v", wgName, err)
+				// Log the error with more details
+				log.Printf("Warning: failed to tag workgroup %s (ARN: %s): %v", wgName, arn, err)
 				continue
 			}
 		}
@@ -72,6 +91,7 @@ func (t *AWSResourceTagger) tagAthenaWorkgroups(client AthenaAPI) error {
 
 // tagAthenaDataCatalogs tags Athena data catalogs
 func (t *AWSResourceTagger) tagAthenaDataCatalogs(client AthenaAPI) error {
+	log.Println("Starting to list and tag data catalogs...")
 	input := &athena.ListDataCatalogsInput{}
 	for {
 		catalogs, err := client.ListDataCatalogs(t.ctx, input)
@@ -81,15 +101,12 @@ func (t *AWSResourceTagger) tagAthenaDataCatalogs(client AthenaAPI) error {
 
 		for _, catalog := range catalogs.DataCatalogsSummary {
 			catalogName := aws.ToString(catalog.CatalogName)
-			if catalogName == "AwsDataCatalog" { // Skip the default AWS catalog
-				continue
-			}
+			// Removed the AwsDataCatalog skip condition
 
-			arn := fmt.Sprintf("arn:aws:athena:%s:%s:datacatalog/%s",
-				t.cfg.Region, t.accountID, catalogName)
-
+			arn := t.buildAthenaCatalogARN(catalogName)
 			if err := t.tagResource(client, arn, catalogName, "data catalog"); err != nil {
-				log.Printf("Warning: failed to tag data catalog %s: %v", catalogName, err)
+				// Log the error with more details
+				log.Printf("Warning: failed to tag data catalog %s (ARN: %s): %v", catalogName, arn, err)
 				continue
 			}
 		}
@@ -109,7 +126,7 @@ func (t *AWSResourceTagger) tagResource(client AthenaAPI, arn, resourceName, res
 		Tags:        t.convertToAthenaTags(),
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to tag resource: %w", err)
 	}
 	log.Printf("Successfully tagged Athena %s: %s", resourceType, resourceName)
 	return nil
@@ -135,12 +152,12 @@ func (t *AWSResourceTagger) tagAthenaResources() {
 
 // tagAthenaResourcesWithClient handles the actual tagging logic with a provided client
 func (t *AWSResourceTagger) tagAthenaResourcesWithClient(client AthenaAPI) {
-	log.Println("Tagging Athena resources...")
+	log.Println("Tagging Athena resources...") // This must be the first log message
+	log.Printf("Starting Athena tagging with Account ID: %s", t.accountID)
 
 	// Validate tags before proceeding
 	if err := t.validateTags(); err != nil {
 		log.Printf("Error: Invalid tags configuration: %v", err)
-		// Even with validation error, we should log completion
 		log.Println("Completed tagging Athena resources")
 		return
 	}
