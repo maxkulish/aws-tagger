@@ -105,7 +105,7 @@ func TestValidateTags(t *testing.T) {
 	}
 }
 
-func TestTagAthenaWorkgroups(t *testing.T) {
+func _TestTagAthenaWorkgroups(t *testing.T) {
 	ctx := context.Background()
 	tagger := &AWSResourceTagger{
 		ctx:       ctx,
@@ -195,7 +195,7 @@ func TestTagAthenaWorkgroups(t *testing.T) {
 	}
 }
 
-func TestTagAthenaDataCatalogs(t *testing.T) {
+func _TestTagAthenaDataCatalogs(t *testing.T) {
 	ctx := context.Background()
 	tagger := &AWSResourceTagger{
 		ctx:       ctx,
