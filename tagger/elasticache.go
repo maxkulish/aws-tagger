@@ -1,6 +1,7 @@
 package tagger
 
 import (
+	"context"
 	"fmt"
 	"log"
 
@@ -9,11 +10,23 @@ import (
 	elctypes "github.com/aws/aws-sdk-go-v2/service/elasticache/types"
 )
 
-// tagElastiCacheResources tags ElastiCache clusters and replication groups
+// ElastiCacheAPI interface for ElastiCache client operations
+type ElastiCacheAPI interface {
+	DescribeCacheClusters(ctx context.Context, params *elasticache.DescribeCacheClustersInput, optFns ...func(*elasticache.Options)) (*elasticache.DescribeCacheClustersOutput, error)
+	DescribeReplicationGroups(ctx context.Context, params *elasticache.DescribeReplicationGroupsInput, optFns ...func(*elasticache.Options)) (*elasticache.DescribeReplicationGroupsOutput, error)
+	AddTagsToResource(ctx context.Context, params *elasticache.AddTagsToResourceInput, optFns ...func(*elasticache.Options)) (*elasticache.AddTagsToResourceOutput, error)
+}
+
+// tagElastiCacheResources is the main entry point that creates and uses the client
 func (t *AWSResourceTagger) tagElastiCacheResources() {
+	client := elasticache.NewFromConfig(t.cfg)
+	t.tagElastiCacheResourcesWithClient(client)
+}
+
+// tagElastiCacheResourcesWithClient handles the actual tagging logic with a provided client
+func (t *AWSResourceTagger) tagElastiCacheResourcesWithClient(client ElastiCacheAPI) {
 	fmt.Println("=====================================")
 	log.Println("Tagging ElastiCache resources...")
-	client := elasticache.NewFromConfig(t.cfg)
 
 	// List all ElastiCache clusters
 	clusters, err := client.DescribeCacheClusters(t.ctx, &elasticache.DescribeCacheClustersInput{})
