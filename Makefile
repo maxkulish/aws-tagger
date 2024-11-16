@@ -50,10 +50,12 @@ test:
 	$(GO) test -v ./...
 
 ## Run tests with coverage
-coverage:
+run_tests_with_coverage:
 	@echo "Running tests with coverage..."
 	$(GO) test -coverprofile=coverage.out ./...
 	$(GO) tool cover -html=coverage.out
+
+coverage: run_tests_with_coverage
 
 ## Run go vet
 vet:

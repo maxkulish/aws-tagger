@@ -17,11 +17,17 @@ type CloudWatchAPI interface {
 	TagResource(ctx context.Context, params *cloudwatch.TagResourceInput, optFns ...func(*cloudwatch.Options)) (*cloudwatch.TagResourceOutput, error)
 }
 
-// Add this method to tagCloudWatchResources in cloudwatch.go
+// tagCloudWatchResourcesWithClient tags CloudWatch alarms and dashboards with the provided client.
+// It logs the process and handles errors. The process includes pagination for fetching alarms and dashboards.
 func (t *AWSResourceTagger) tagCloudWatchResourcesWithClient(client CloudWatchAPI) {
 	log.Println("Starting CloudWatch resource tagging...")
+	defer log.Println("Completed CloudWatch resource tagging")
 
-	// Counters for logging
+	if len(t.tags) == 0 {
+		log.Println("No tags provided, skipping CloudWatch resource tagging")
+		return
+	}
+
 	var (
 		totalAlarms      int
 		taggedAlarms     int
@@ -31,15 +37,19 @@ func (t *AWSResourceTagger) tagCloudWatchResourcesWithClient(client CloudWatchAP
 		failedDashboards int
 	)
 
-	// Tag CloudWatch Alarms
+	// Tag CloudWatch Alarms with pagination
 	log.Println("Discovering CloudWatch alarms...")
-	output, err := client.DescribeAlarms(t.ctx, &cloudwatch.DescribeAlarmsInput{})
-	if err != nil {
-		log.Printf("Error describing CloudWatch alarms: %v", err)
-	} else {
-		totalAlarms = len(output.MetricAlarms)
-		log.Printf("Found %d CloudWatch alarms", totalAlarms)
+	var nextTokenAlarms *string
+	for {
+		output, err := client.DescribeAlarms(t.ctx, &cloudwatch.DescribeAlarmsInput{
+			NextToken: nextTokenAlarms,
+		})
+		if err != nil {
+			log.Printf("Error describing CloudWatch alarms: %v", err)
+			break
+		}
 
+		totalAlarms += len(output.MetricAlarms)
 		for _, alarm := range output.MetricAlarms {
 			cwTags := make([]cloudwatchtypes.Tag, 0, len(t.tags))
 			for k, v := range t.tags {
@@ -60,17 +70,26 @@ func (t *AWSResourceTagger) tagCloudWatchResourcesWithClient(client CloudWatchAP
 			}
 			taggedAlarms++
 		}
+
+		if output.NextToken == nil {
+			break
+		}
+		nextTokenAlarms = output.NextToken
 	}
 
-	// Tag CloudWatch Dashboards
+	// Tag CloudWatch Dashboards with pagination
 	log.Println("Discovering CloudWatch dashboards...")
-	dashboards, err := client.ListDashboards(t.ctx, &cloudwatch.ListDashboardsInput{})
-	if err != nil {
-		log.Printf("Error listing CloudWatch dashboards: %v", err)
-	} else {
-		totalDashboards = len(dashboards.DashboardEntries)
-		log.Printf("Found %d CloudWatch dashboards", totalDashboards)
+	var nextTokenDashboards *string
+	for {
+		dashboards, err := client.ListDashboards(t.ctx, &cloudwatch.ListDashboardsInput{
+			NextToken: nextTokenDashboards,
+		})
+		if err != nil {
+			log.Printf("Error listing CloudWatch dashboards: %v", err)
+			break
+		}
 
+		totalDashboards += len(dashboards.DashboardEntries)
 		for _, dashboard := range dashboards.DashboardEntries {
 			cwTags := make([]cloudwatchtypes.Tag, 0, len(t.tags))
 			for k, v := range t.tags {
@@ -91,6 +110,11 @@ func (t *AWSResourceTagger) tagCloudWatchResourcesWithClient(client CloudWatchAP
 			}
 			taggedDashboards++
 		}
+
+		if dashboards.NextToken == nil {
+			break
+		}
+		nextTokenDashboards = dashboards.NextToken
 	}
 
 	// Print summary
