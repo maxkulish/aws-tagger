@@ -2,6 +2,7 @@
 package tagger
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"sync/atomic"
@@ -30,12 +31,34 @@ type GlueMetrics struct {
 	TriggersFailed    int32
 }
 
-// tagGlueResources tags AWS Glue resources
+// GlueAPI interface for Glue client operations
+type GlueAPI interface {
+	GetDatabases(ctx context.Context, params *glue.GetDatabasesInput, optFns ...func(*glue.Options)) (*glue.GetDatabasesOutput, error)
+	TagResource(ctx context.Context, params *glue.TagResourceInput, optFns ...func(*glue.Options)) (*glue.TagResourceOutput, error)
+	GetConnections(ctx context.Context, params *glue.GetConnectionsInput, optFns ...func(*glue.Options)) (*glue.GetConnectionsOutput, error)
+	GetJobs(ctx context.Context, params *glue.GetJobsInput, optFns ...func(*glue.Options)) (*glue.GetJobsOutput, error)
+	GetCrawlers(ctx context.Context, params *glue.GetCrawlersInput, optFns ...func(*glue.Options)) (*glue.GetCrawlersOutput, error)
+	GetTriggers(ctx context.Context, params *glue.GetTriggersInput, optFns ...func(*glue.Options)) (*glue.GetTriggersOutput, error)
+}
+
+// tagGlueResources is the main entry point that creates and uses the client
 func (t *AWSResourceTagger) tagGlueResources() {
-	log.Println("Tagging Glue resources...")
 	client := glue.NewFromConfig(t.cfg)
+	t.tagGlueResourcesWithClient(client)
+}
+
+// tagGlueResourcesWithClient handles the actual tagging logic with a provided client
+func (t *AWSResourceTagger) tagGlueResourcesWithClient(client GlueAPI) {
+	log.Println("Tagging Glue resources...")
 
 	metrics := &GlueMetrics{}
+
+	// Validate tags before proceeding
+	if err := t.validateTags(); err != nil {
+		log.Printf("Error: Invalid tags configuration: %v", err)
+		log.Println("Completed tagging Glue resources")
+		return
+	}
 
 	// Tag all supported Glue resource types
 	t.tagGlueDatabases(client, metrics)
@@ -48,7 +71,7 @@ func (t *AWSResourceTagger) tagGlueResources() {
 }
 
 // tagGlueDatabases tags Glue databases (skipping tables since they're not taggable)
-func (t *AWSResourceTagger) tagGlueDatabases(client *glue.Client, metrics *GlueMetrics) {
+func (t *AWSResourceTagger) tagGlueDatabases(client GlueAPI, metrics *GlueMetrics) {
 	databases, err := client.GetDatabases(t.ctx, &glue.GetDatabasesInput{})
 	if err != nil {
 		t.handleError(err, "all", "Glue Databases")
@@ -72,7 +95,7 @@ func (t *AWSResourceTagger) tagGlueDatabases(client *glue.Client, metrics *GlueM
 }
 
 // tagDatabase tags a single Glue database
-func (t *AWSResourceTagger) tagDatabase(client *glue.Client, dbName string) error {
+func (t *AWSResourceTagger) tagDatabase(client GlueAPI, dbName string) error {
 	resourceArn := t.buildCompoundARN(GlueDatabase, dbName)
 	log.Printf("database ARN: %s", resourceArn)
 
@@ -94,7 +117,7 @@ func (t *AWSResourceTagger) convertToGlueTags() map[string]string {
 }
 
 // tagGlueConnections tags AWS Glue connections with metrics
-func (t *AWSResourceTagger) tagGlueConnections(client *glue.Client, metrics *GlueMetrics) {
+func (t *AWSResourceTagger) tagGlueConnections(client GlueAPI, metrics *GlueMetrics) {
 	log.Println("Tagging Glue connections...")
 
 	connections, err := client.GetConnections(t.ctx, &glue.GetConnectionsInput{})
@@ -120,7 +143,7 @@ func (t *AWSResourceTagger) tagGlueConnections(client *glue.Client, metrics *Glu
 }
 
 // tagConnection tags a single Glue connection
-func (t *AWSResourceTagger) tagConnection(client *glue.Client, conn gluetypes.Connection) error {
+func (t *AWSResourceTagger) tagConnection(client GlueAPI, conn gluetypes.Connection) error {
 	connName := aws.ToString(conn.Name)
 
 	// Build connection ARN using the predefined pattern
@@ -142,7 +165,7 @@ func (t *AWSResourceTagger) tagConnection(client *glue.Client, conn gluetypes.Co
 
 // Glue Jobs
 // tagGlueJobs tags AWS Glue jobs with metrics
-func (t *AWSResourceTagger) tagGlueJobs(client *glue.Client, metrics *GlueMetrics) {
+func (t *AWSResourceTagger) tagGlueJobs(client GlueAPI, metrics *GlueMetrics) {
 	log.Println("Tagging Glue jobs...")
 
 	// Initialize paging parameters
@@ -186,7 +209,7 @@ func (t *AWSResourceTagger) tagGlueJobs(client *glue.Client, metrics *GlueMetric
 }
 
 // tagJob tags a single Glue job
-func (t *AWSResourceTagger) tagJob(client *glue.Client, job gluetypes.Job) error {
+func (t *AWSResourceTagger) tagJob(client GlueAPI, job gluetypes.Job) error {
 	jobName := aws.ToString(job.Name)
 
 	// Build job ARN using the predefined pattern
@@ -208,7 +231,7 @@ func (t *AWSResourceTagger) tagJob(client *glue.Client, job gluetypes.Job) error
 
 // Glue Crawlers
 // tagGlueCrawlers tags AWS Glue crawlers with metrics
-func (t *AWSResourceTagger) tagGlueCrawlers(client *glue.Client, metrics *GlueMetrics) {
+func (t *AWSResourceTagger) tagGlueCrawlers(client GlueAPI, metrics *GlueMetrics) {
 	log.Println("Tagging Glue crawlers...")
 
 	// Initialize paging parameters
@@ -252,7 +275,7 @@ func (t *AWSResourceTagger) tagGlueCrawlers(client *glue.Client, metrics *GlueMe
 }
 
 // tagCrawler tags a single Glue crawler
-func (t *AWSResourceTagger) tagCrawler(client *glue.Client, crawler gluetypes.Crawler) error {
+func (t *AWSResourceTagger) tagCrawler(client GlueAPI, crawler gluetypes.Crawler) error {
 	crawlerName := aws.ToString(crawler.Name)
 
 	// Build crawler ARN using the predefined pattern
@@ -273,7 +296,7 @@ func (t *AWSResourceTagger) tagCrawler(client *glue.Client, crawler gluetypes.Cr
 }
 
 // tagGlueTriggers tags AWS Glue triggers with metrics
-func (t *AWSResourceTagger) tagGlueTriggers(client *glue.Client, metrics *GlueMetrics) {
+func (t *AWSResourceTagger) tagGlueTriggers(client GlueAPI, metrics *GlueMetrics) {
 	log.Println("Tagging Glue triggers...")
 
 	// Initialize paging parameters
@@ -317,7 +340,7 @@ func (t *AWSResourceTagger) tagGlueTriggers(client *glue.Client, metrics *GlueMe
 }
 
 // tagTrigger tags a single Glue trigger
-func (t *AWSResourceTagger) tagTrigger(client *glue.Client, trigger gluetypes.Trigger) error {
+func (t *AWSResourceTagger) tagTrigger(client GlueAPI, trigger gluetypes.Trigger) error {
 	triggerName := aws.ToString(trigger.Name)
 
 	// Build trigger ARN using the predefined pattern
