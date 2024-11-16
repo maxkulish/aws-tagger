@@ -38,26 +38,6 @@ func (t *AWSResourceTagger) validateTags() error {
 	return nil
 }
 
-// buildAthenaWorkgroupARN builds the correct ARN format for Athena workgroups
-func (t *AWSResourceTagger) buildAthenaWorkgroupARN(workgroupName string) string {
-	// Add debug logging to verify the values
-	arn := fmt.Sprintf("arn:aws:athena:%s:%s:workgroup/%s",
-		t.cfg.Region,
-		t.accountID,
-		workgroupName)
-	return arn
-}
-
-// buildAthenaCatalogARN builds the correct ARN format for Athena data catalogs
-func (t *AWSResourceTagger) buildAthenaCatalogARN(catalogName string) string {
-	// Add debug logging to verify the values
-	arn := fmt.Sprintf("arn:aws:athena:%s:%s:datacatalog/%s",
-		t.cfg.Region,
-		t.accountID,
-		catalogName)
-	return arn
-}
-
 // tagAthenaWorkgroups tags Athena workgroups
 func (t *AWSResourceTagger) tagAthenaWorkgroups(client AthenaAPI) error {
 	input := &athena.ListWorkGroupsInput{}
@@ -153,7 +133,13 @@ func (t *AWSResourceTagger) tagAthenaResources() {
 // tagAthenaResourcesWithClient handles the actual tagging logic with a provided client
 func (t *AWSResourceTagger) tagAthenaResourcesWithClient(client AthenaAPI) {
 	log.Println("Tagging Athena resources...") // This must be the first log message
+	defer log.Println("Completed tagging Athena resources")
 	log.Printf("Starting Athena tagging with Account ID: %s", t.accountID)
+
+	if len(t.tags) == 0 {
+		log.Println("No tags provided, skipping Athena resource tagging")
+		return
+	}
 
 	// Validate tags before proceeding
 	if err := t.validateTags(); err != nil {

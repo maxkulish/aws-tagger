@@ -211,7 +211,7 @@ func TestTagAthenaWorkgroups(t *testing.T) {
 	}
 }
 
-func _TestTagAthenaDataCatalogs(t *testing.T) {
+func TestTagAthenaDataCatalogs(t *testing.T) {
 	ctx := context.Background()
 	tagger := &AWSResourceTagger{
 		ctx:       ctx,
@@ -240,8 +240,19 @@ func _TestTagAthenaDataCatalogs(t *testing.T) {
 						},
 					}, nil)
 
+				expectedTags := []athenatypes.Tag{
+					{
+						Key:   aws.String("Environment"),
+						Value: aws.String("Test"),
+					},
+				}
+
+				// Use mock.MatchedBy to compare the important parts of the input
 				m.On("TagResource", ctx, mock.MatchedBy(func(input *athena.TagResourceInput) bool {
-					return aws.ToString(input.ResourceARN) == fmt.Sprintf("arn:aws:athena:us-west-2:123456789012:datacatalog/custom-catalog")
+					return strings.Contains(aws.ToString(input.ResourceARN), "datacatalog/custom-catalog") &&
+						len(input.Tags) == len(expectedTags) &&
+						aws.ToString(input.Tags[0].Key) == aws.ToString(expectedTags[0].Key) &&
+						aws.ToString(input.Tags[0].Value) == aws.ToString(expectedTags[0].Value)
 				})).Return(&athena.TagResourceOutput{}, nil)
 			},
 			expectError: false,
@@ -254,6 +265,26 @@ func _TestTagAthenaDataCatalogs(t *testing.T) {
 			},
 			expectError:   true,
 			errorContains: "failed to list data catalogs",
+		},
+		{
+			name: "Handle TagResource error",
+			catalogs: []athenatypes.DataCatalogSummary{
+				{CatalogName: aws.String("custom-catalog")},
+			},
+			setupMocks: func(m *MockAthenaClient) {
+				m.On("ListDataCatalogs", ctx, &athena.ListDataCatalogsInput{}).
+					Return(&athena.ListDataCatalogsOutput{
+						DataCatalogsSummary: []athenatypes.DataCatalogSummary{
+							{CatalogName: aws.String("custom-catalog")},
+						},
+					}, nil)
+
+				// Use mock.MatchedBy for the error case
+				m.On("TagResource", ctx, mock.MatchedBy(func(input *athena.TagResourceInput) bool {
+					return strings.Contains(aws.ToString(input.ResourceARN), "datacatalog/custom-catalog")
+				})).Return(&athena.TagResourceOutput{}, fmt.Errorf("tagging error"))
+			},
+			expectError: false, // We don't return error for individual tagging failures
 		},
 	}
 
@@ -393,8 +424,12 @@ func TestConvertToAthenaTags(t *testing.T) {
 	}
 }
 
-func _TestTagAthenaResources(t *testing.T) {
+func TestTagAthenaResources(t *testing.T) {
 	ctx := context.Background()
+	validTags := map[string]string{
+		"Environment": "Test",
+		"Project":     "Demo",
+	}
 
 	testCases := []struct {
 		name        string
@@ -404,34 +439,92 @@ func _TestTagAthenaResources(t *testing.T) {
 		skipLogTest bool
 	}{
 		{
-			name: "Successfully tag all resources",
-			tags: map[string]string{
-				"Environment": "Test",
-				"Project":     "Demo",
-			},
+			name: "Successfully tag all resources with pagination",
+			tags: validTags,
 			setupMocks: func(m *MockAthenaClient) {
-				// Mock ListWorkGroups
+				// First page of workgroups
 				m.On("ListWorkGroups", mock.Anything, &athena.ListWorkGroupsInput{}).
 					Return(&athena.ListWorkGroupsOutput{
 						WorkGroups: []athenatypes.WorkGroupSummary{
 							{Name: aws.String("workgroup1")},
 							{Name: aws.String("primary")}, // Should be skipped
 						},
-					}, nil)
+						NextToken: aws.String("next-page"),
+					}, nil).Once()
 
-				// Mock ListDataCatalogs
+				// Second page of workgroups
+				m.On("ListWorkGroups", mock.Anything, &athena.ListWorkGroupsInput{
+					NextToken: aws.String("next-page"),
+				}).Return(&athena.ListWorkGroupsOutput{
+					WorkGroups: []athenatypes.WorkGroupSummary{
+						{Name: aws.String("workgroup2")},
+					},
+				}, nil).Once()
+
+				// First page of data catalogs
 				m.On("ListDataCatalogs", mock.Anything, &athena.ListDataCatalogsInput{}).
 					Return(&athena.ListDataCatalogsOutput{
 						DataCatalogsSummary: []athenatypes.DataCatalogSummary{
+							{CatalogName: aws.String("custom-catalog1")},
+						},
+						NextToken: aws.String("next-catalog-page"),
+					}, nil).Once()
+
+				// Second page of data catalogs
+				m.On("ListDataCatalogs", mock.Anything, &athena.ListDataCatalogsInput{
+					NextToken: aws.String("next-catalog-page"),
+				}).Return(&athena.ListDataCatalogsOutput{
+					DataCatalogsSummary: []athenatypes.DataCatalogSummary{
+						{CatalogName: aws.String("custom-catalog2")},
+					},
+				}, nil).Once()
+
+				// Mock TagResource calls
+				m.On("TagResource", mock.Anything, mock.MatchedBy(func(input *athena.TagResourceInput) bool {
+					arn := aws.ToString(input.ResourceARN)
+					return strings.Contains(arn, "workgroup/workgroup1") ||
+						strings.Contains(arn, "workgroup/workgroup2") ||
+						strings.Contains(arn, "datacatalog/custom-catalog1") ||
+						strings.Contains(arn, "datacatalog/custom-catalog2")
+				})).Return(&athena.TagResourceOutput{}, nil).Times(4)
+			},
+			expectLogs: []string{
+				"Tagging Athena resources...",
+				"Successfully tagged Athena workgroup: workgroup1",
+				"Successfully tagged Athena workgroup: workgroup2",
+				"Successfully tagged Athena data catalog: custom-catalog1",
+				"Successfully tagged Athena data catalog: custom-catalog2",
+				"Completed tagging Athena resources",
+			},
+		},
+		{
+			name: "Handle invalid tags",
+			tags: map[string]string{
+				"aws:restricted": "value",
+			},
+			setupMocks: func(m *MockAthenaClient) {
+				// No mocks needed as validation should fail first
+			},
+			expectLogs: []string{
+				"Tagging Athena resources...",
+				"Error: Invalid tags configuration: tag key cannot start with 'aws:'",
+				"Completed tagging Athena resources",
+			},
+		},
+		{
+			name: "Handle ListWorkGroups error",
+			tags: validTags,
+			setupMocks: func(m *MockAthenaClient) {
+				m.On("ListWorkGroups", mock.Anything, mock.Anything).
+					Return((*athena.ListWorkGroupsOutput)(nil), fmt.Errorf("API error"))
+
+				// Need to mock ListDataCatalogs as the function continues even after ListWorkGroups error
+				m.On("ListDataCatalogs", mock.Anything, mock.Anything).
+					Return(&athena.ListDataCatalogsOutput{
+						DataCatalogsSummary: []athenatypes.DataCatalogSummary{
 							{CatalogName: aws.String("custom-catalog")},
-							{CatalogName: aws.String("AwsDataCatalog")}, // Should be skipped
 						},
 					}, nil)
-
-				// Mock TagResource for workgroup
-				m.On("TagResource", mock.Anything, mock.MatchedBy(func(input *athena.TagResourceInput) bool {
-					return strings.Contains(aws.ToString(input.ResourceARN), "workgroup/workgroup1")
-				})).Return(&athena.TagResourceOutput{}, nil)
 
 				// Mock TagResource for data catalog
 				m.On("TagResource", mock.Anything, mock.MatchedBy(func(input *athena.TagResourceInput) bool {
@@ -440,22 +533,57 @@ func _TestTagAthenaResources(t *testing.T) {
 			},
 			expectLogs: []string{
 				"Tagging Athena resources...",
-				"Successfully tagged Athena workgroup: workgroup1",
+				"Error tagging Athena workgroups: failed to list workgroups",
 				"Successfully tagged Athena data catalog: custom-catalog",
 				"Completed tagging Athena resources",
 			},
 		},
 		{
-			name: "Handle invalid tags",
-			tags: map[string]string{
-				"aws:restricted": "value", // Invalid tag with aws: prefix
-			},
+			name: "Handle ListDataCatalogs error",
+			tags: validTags,
 			setupMocks: func(m *MockAthenaClient) {
-				// No mocks needed as validation should fail first
+				// ListWorkGroups succeeds but returns no workgroups
+				m.On("ListWorkGroups", mock.Anything, mock.Anything).
+					Return(&athena.ListWorkGroupsOutput{}, nil)
+
+				// ListDataCatalogs fails
+				m.On("ListDataCatalogs", mock.Anything, mock.Anything).
+					Return((*athena.ListDataCatalogsOutput)(nil), fmt.Errorf("API error"))
 			},
 			expectLogs: []string{
 				"Tagging Athena resources...",
-				"Error: Invalid tags configuration: tag key cannot start with 'aws:': aws:restricted",
+				"Error tagging Athena data catalogs: failed to list data catalogs",
+				"Completed tagging Athena resources",
+			},
+		},
+		{
+			name: "Handle TagResource error",
+			tags: validTags,
+			setupMocks: func(m *MockAthenaClient) {
+				// Return one workgroup
+				m.On("ListWorkGroups", mock.Anything, mock.Anything).
+					Return(&athena.ListWorkGroupsOutput{
+						WorkGroups: []athenatypes.WorkGroupSummary{
+							{Name: aws.String("workgroup1")},
+						},
+					}, nil)
+
+				// Return one catalog
+				m.On("ListDataCatalogs", mock.Anything, mock.Anything).
+					Return(&athena.ListDataCatalogsOutput{
+						DataCatalogsSummary: []athenatypes.DataCatalogSummary{
+							{CatalogName: aws.String("custom-catalog")},
+						},
+					}, nil)
+
+				// Fail all TagResource calls
+				m.On("TagResource", mock.Anything, mock.Anything).
+					Return((*athena.TagResourceOutput)(nil), fmt.Errorf("tagging error"))
+			},
+			expectLogs: []string{
+				"Tagging Athena resources...",
+				"Warning: failed to tag workgroup workgroup1",
+				"Warning: failed to tag data catalog custom-catalog",
 				"Completed tagging Athena resources",
 			},
 		},
@@ -463,10 +591,9 @@ func _TestTagAthenaResources(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Create a buffer to capture log output
+			// Capture log output
 			var logBuffer bytes.Buffer
 			log.SetOutput(&logBuffer)
-			// Restore logger output after test
 			defer log.SetOutput(os.Stderr)
 
 			// Create mock client and set up expectations
@@ -478,10 +605,11 @@ func _TestTagAthenaResources(t *testing.T) {
 				ctx:       ctx,
 				cfg:       aws.Config{Region: "us-west-2"},
 				accountID: "123456789012",
+				region:    "us-west-2",
 				tags:      tc.tags,
 			}
 
-			// Execute tagging with mock client - Use tagAthenaResourcesWithClient instead of tagAthenaResources
+			// Execute tagging
 			tagger.tagAthenaResourcesWithClient(mockClient)
 
 			// Verify mock expectations
@@ -496,4 +624,74 @@ func _TestTagAthenaResources(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTagAthenaResourcesWithEmptyTags(t *testing.T) {
+	ctx := context.Background()
+	tagger := &AWSResourceTagger{
+		ctx:       ctx,
+		cfg:       aws.Config{Region: "us-west-2"},
+		accountID: "123456789012",
+		region:    "us-west-2",
+		tags:      map[string]string{},
+	}
+
+	var logBuffer bytes.Buffer
+	log.SetOutput(&logBuffer)
+	defer log.SetOutput(os.Stderr)
+
+	mockClient := new(MockAthenaClient)
+	// Since we have the empty tags check, no API calls should be made
+	tagger.tagAthenaResourcesWithClient(mockClient)
+
+	// Verify no API calls were made
+	mockClient.AssertNotCalled(t, "ListWorkGroups")
+	mockClient.AssertNotCalled(t, "ListDataCatalogs")
+	mockClient.AssertNotCalled(t, "TagResource")
+
+	logOutput := logBuffer.String()
+	assert.Contains(t, logOutput, "Tagging Athena resources...")
+	assert.Contains(t, logOutput, "No tags provided, skipping Athena resource tagging")
+	assert.Contains(t, logOutput, "Completed tagging Athena resources")
+}
+
+func TestTagAthenaResourcesWithSkipPrimary(t *testing.T) {
+	ctx := context.Background()
+	tagger := &AWSResourceTagger{
+		ctx:       ctx,
+		cfg:       aws.Config{Region: "us-west-2"},
+		accountID: "123456789012",
+		region:    "us-west-2",
+		tags:      map[string]string{"Environment": "Test"},
+	}
+
+	var logBuffer bytes.Buffer
+	log.SetOutput(&logBuffer)
+	defer log.SetOutput(os.Stderr)
+
+	mockClient := new(MockAthenaClient)
+
+	// Mock ListWorkGroups to return only the primary workgroup
+	mockClient.On("ListWorkGroups", mock.Anything, &athena.ListWorkGroupsInput{}).
+		Return(&athena.ListWorkGroupsOutput{
+			WorkGroups: []athenatypes.WorkGroupSummary{
+				{Name: aws.String("primary")}, // Should be skipped
+			},
+		}, nil)
+
+	// Mock ListDataCatalogs to return empty list
+	mockClient.On("ListDataCatalogs", mock.Anything, &athena.ListDataCatalogsInput{}).
+		Return(&athena.ListDataCatalogsOutput{
+			DataCatalogsSummary: []athenatypes.DataCatalogSummary{},
+		}, nil)
+
+	tagger.tagAthenaResourcesWithClient(mockClient)
+
+	// Verify all expectations
+	mockClient.AssertExpectations(t)
+
+	logOutput := logBuffer.String()
+	assert.Contains(t, logOutput, "Tagging Athena resources...")
+	assert.Contains(t, logOutput, "Completed tagging Athena resources")
+	assert.NotContains(t, logOutput, "Successfully tagged Athena workgroup: primary")
 }

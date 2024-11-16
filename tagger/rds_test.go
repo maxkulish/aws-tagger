@@ -181,8 +181,12 @@ func TestTagDBInstances(t *testing.T) {
 					ResourceName: instance.DBInstanceArn,
 					Tags:         convertToRDSTags(tt.tags),
 				}
-				err := tt.tagErrors[*instance.DBInstanceArn]
-				mockClient.On("AddTagsToResource", mock.Anything, expectedInput).Return(&rds.AddTagsToResourceOutput{}, err)
+
+				// Use matchTagsInput for comparing tags regardless of order
+				mockClient.On("AddTagsToResource",
+					mock.Anything,
+					mock.MatchedBy(matchTagsInput(expectedInput)),
+				).Return(&rds.AddTagsToResourceOutput{}, tt.tagErrors[*instance.DBInstanceArn])
 			}
 
 			// Create tagger instance
