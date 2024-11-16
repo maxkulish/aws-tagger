@@ -38,15 +38,15 @@ func (t *AWSResourceTagger) TagAllResources() {
 
 	var wg sync.WaitGroup
 	resourceTaggers := map[string]func(){
-		//"EC2":         t.tagEC2Resources,
+		"EC2":        t.tagEC2Resources,
+		"CloudWatch": t.tagCloudWatchResources,
+		"Glue":       t.tagGlueResources,
+		"Athena":     t.tagAthenaResources,
 		//"S3Buckets":   t.tagS3Buckets,
-		//"CloudWatch":  t.tagCloudWatchResources,
 		//"OpenSearch":  t.tagOpenSearchResources,
 		//"ElastiCache": t.tagElastiCacheResources,
 		//"RDS":         t.tagRDSResources,
-		"Glue": t.tagGlueResources,
 		//"VPC":         t.tagVPCResources,
-		//"Athena": t.tagAthenaResources,
 		//"ELB":         t.tagELBResources,
 	}
 	errorsChannel := make(chan error, len(resourceTaggers))
