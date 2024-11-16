@@ -102,195 +102,6 @@ func TestTagCloudWatchResourcesWithEmptyTags(t *testing.T) {
 	assert.Contains(t, logOutput, "Completed CloudWatch resource tagging")
 }
 
-func TestTagCloudWatchResources(t *testing.T) {
-	ctx := context.Background()
-	validTags := map[string]string{
-		"Environment": "Test",
-		"Project":     "Demo",
-	}
-
-	tests := []struct {
-		name          string
-		tags          map[string]string
-		setupMocks    func(*MockCloudWatchClient)
-		expectedCalls map[string]int
-		expectError   bool
-		checkLogs     func(string) bool
-	}{
-		{
-			name: "Successfully tag multiple resources with pagination",
-			tags: validTags,
-			setupMocks: func(m *MockCloudWatchClient) {
-				// First page of alarms
-				m.On("DescribeAlarms", mock.Anything, &cloudwatch.DescribeAlarmsInput{
-					NextToken: (*string)(nil),
-				}).Return(&cloudwatch.DescribeAlarmsOutput{
-					MetricAlarms: []cloudwatchtypes.MetricAlarm{
-						{
-							AlarmName: aws.String("alarm1"),
-							AlarmArn:  aws.String("arn:aws:cloudwatch:us-west-2:123456789012:alarm:alarm1"),
-						},
-					},
-					NextToken: aws.String("next-token"),
-				}, nil).Once()
-
-				// Second page of alarms
-				m.On("DescribeAlarms", mock.Anything, &cloudwatch.DescribeAlarmsInput{
-					NextToken: aws.String("next-token"),
-				}).Return(&cloudwatch.DescribeAlarmsOutput{
-					MetricAlarms: []cloudwatchtypes.MetricAlarm{
-						{
-							AlarmName: aws.String("alarm2"),
-							AlarmArn:  aws.String("arn:aws:cloudwatch:us-west-2:123456789012:alarm:alarm2"),
-						},
-					},
-				}, nil).Once()
-
-				// First page of dashboards
-				m.On("ListDashboards", mock.Anything, &cloudwatch.ListDashboardsInput{
-					NextToken: (*string)(nil),
-				}).Return(&cloudwatch.ListDashboardsOutput{
-					DashboardEntries: []cloudwatchtypes.DashboardEntry{
-						{
-							DashboardName: aws.String("dashboard1"),
-							DashboardArn:  aws.String("arn:aws:cloudwatch:us-west-2:123456789012:dashboard/dashboard1"),
-						},
-					},
-					NextToken: aws.String("next-dash-token"),
-				}, nil).Once()
-
-				// Second page of dashboards
-				m.On("ListDashboards", mock.Anything, &cloudwatch.ListDashboardsInput{
-					NextToken: aws.String("next-dash-token"),
-				}).Return(&cloudwatch.ListDashboardsOutput{
-					DashboardEntries: []cloudwatchtypes.DashboardEntry{
-						{
-							DashboardName: aws.String("dashboard2"),
-							DashboardArn:  aws.String("arn:aws:cloudwatch:us-west-2:123456789012:dashboard/dashboard2"),
-						},
-					},
-				}, nil).Once()
-
-				// Mock TagResource for all resources
-				m.On("TagResource", mock.Anything, mock.MatchedBy(func(input *cloudwatch.TagResourceInput) bool {
-					return strings.Contains(aws.ToString(input.ResourceARN), ":alarm:") ||
-						strings.Contains(aws.ToString(input.ResourceARN), ":dashboard/")
-				})).Return(&cloudwatch.TagResourceOutput{}, nil)
-			},
-			expectedCalls: map[string]int{
-				"DescribeAlarms": 2,
-				"ListDashboards": 2,
-				"TagResource":    4,
-			},
-		},
-		{
-			name: "Handle TagResource error for alarms",
-			tags: validTags,
-			setupMocks: func(m *MockCloudWatchClient) {
-				m.On("DescribeAlarms", mock.Anything, mock.Anything).
-					Return(&cloudwatch.DescribeAlarmsOutput{
-						MetricAlarms: []cloudwatchtypes.MetricAlarm{
-							{
-								AlarmName: aws.String("alarm1"),
-								AlarmArn:  aws.String("arn:aws:cloudwatch:us-west-2:123456789012:alarm:alarm1"),
-							},
-						},
-					}, nil)
-
-				m.On("ListDashboards", mock.Anything, mock.Anything).
-					Return(&cloudwatch.ListDashboardsOutput{}, nil)
-
-				// Mock TagResource to fail for alarms
-				m.On("TagResource", mock.Anything, mock.MatchedBy(func(input *cloudwatch.TagResourceInput) bool {
-					return strings.Contains(aws.ToString(input.ResourceARN), ":alarm:")
-				})).Return(nil, fmt.Errorf("API error")).Once()
-			},
-			expectedCalls: map[string]int{
-				"DescribeAlarms": 1,
-				"ListDashboards": 1,
-				"TagResource":    1,
-			},
-		},
-		{
-			name: "Handle empty response from APIs",
-			tags: validTags,
-			setupMocks: func(m *MockCloudWatchClient) {
-				m.On("DescribeAlarms", mock.Anything, mock.Anything).
-					Return(&cloudwatch.DescribeAlarmsOutput{
-						MetricAlarms: []cloudwatchtypes.MetricAlarm{},
-					}, nil)
-
-				m.On("ListDashboards", mock.Anything, mock.Anything).
-					Return(&cloudwatch.ListDashboardsOutput{
-						DashboardEntries: []cloudwatchtypes.DashboardEntry{},
-					}, nil)
-			},
-			expectedCalls: map[string]int{
-				"DescribeAlarms": 1,
-				"ListDashboards": 1,
-				"TagResource":    0,
-			},
-		},
-		{
-			name: "Handle AccessDenied error",
-			tags: validTags,
-			setupMocks: func(m *MockCloudWatchClient) {
-				// Create an AWS API error
-				apiErr := &smithy.GenericAPIError{
-					Code:    "AccessDenied",
-					Message: "User not authorized",
-				}
-
-				m.On("DescribeAlarms", mock.Anything, mock.Anything).
-					Return(nil, apiErr)
-
-				m.On("ListDashboards", mock.Anything, mock.Anything).
-					Return(nil, apiErr)
-			},
-			expectedCalls: map[string]int{
-				"DescribeAlarms": 1,
-				"ListDashboards": 1,
-				"TagResource":    0,
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockClient := new(MockCloudWatchClient)
-			tt.setupMocks(mockClient)
-
-			tagger := &AWSResourceTagger{
-				ctx:       ctx,
-				cfg:       aws.Config{Region: "us-west-2"},
-				accountID: "123456789012",
-				region:    "us-west-2",
-				tags:      tt.tags,
-			}
-
-			// Capture log output if needed for verification
-			var logBuffer bytes.Buffer
-			log.SetOutput(&logBuffer)
-			defer log.SetOutput(os.Stderr)
-
-			tagger.tagCloudWatchResourcesWithClient(mockClient)
-
-			// Verify the number of calls for each method
-			for method, expectedCount := range tt.expectedCalls {
-				actualCount := 0
-				for _, call := range mockClient.Calls {
-					if call.Method == method {
-						actualCount++
-					}
-				}
-				assert.Equal(t, expectedCount, actualCount, "Expected %d calls to %s but got %d", expectedCount, method, actualCount)
-			}
-
-			mockClient.AssertExpectations(t)
-		})
-	}
-}
-
 func TestTagCloudWatchResourcesMainFunction(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -438,4 +249,224 @@ func TestTagCloudWatchResourcesWithTagError(t *testing.T) {
 	mockClient.AssertExpectations(t)
 	logOutput := logBuffer.String()
 	assert.Contains(t, logOutput, "Access denied")
+}
+
+func TestTagCloudWatchResourcesEmptyTags(t *testing.T) {
+	ctx := context.Background()
+	tagger := &AWSResourceTagger{
+		ctx:       ctx,
+		cfg:       aws.Config{Region: "us-west-2"},
+		accountID: "123456789012",
+		region:    "us-west-2",
+		tags:      map[string]string{},
+	}
+
+	var logBuffer bytes.Buffer
+	log.SetOutput(&logBuffer)
+	defer log.SetOutput(os.Stderr)
+
+	mockClient := new(MockCloudWatchClient)
+
+	// Since we have empty tags, no API calls should be made
+	tagger.tagCloudWatchResourcesWithClient(mockClient)
+
+	// Verify no API calls were made
+	mockClient.AssertNotCalled(t, "DescribeAlarms")
+	mockClient.AssertNotCalled(t, "ListDashboards")
+	mockClient.AssertNotCalled(t, "TagResource")
+
+	logOutput := logBuffer.String()
+	assert.Contains(t, logOutput, "Starting CloudWatch resource tagging...")
+	assert.Contains(t, logOutput, "No tags provided, skipping CloudWatch resource tagging")
+	assert.Contains(t, logOutput, "Completed CloudWatch resource tagging")
+}
+
+func TestTagCloudWatchResources(t *testing.T) {
+	ctx := context.Background()
+	validTags := map[string]string{
+		"Environment": "Test",
+		"Project":     "Demo",
+	}
+
+	testCases := []struct {
+		name        string
+		tags        map[string]string
+		setupMocks  func(*MockCloudWatchClient)
+		expectLogs  []string
+		skipLogTest bool
+	}{
+		{
+			name: "Successfully tag all resources with pagination",
+			tags: validTags,
+			setupMocks: func(m *MockCloudWatchClient) {
+				// First page of alarms
+				m.On("DescribeAlarms", mock.Anything, &cloudwatch.DescribeAlarmsInput{
+					NextToken: (*string)(nil),
+				}).Return(&cloudwatch.DescribeAlarmsOutput{
+					MetricAlarms: []cloudwatchtypes.MetricAlarm{
+						{
+							AlarmName: aws.String("alarm1"),
+							AlarmArn:  aws.String("arn:aws:cloudwatch:us-west-2:123456789012:alarm:alarm1"),
+						},
+					},
+					NextToken: aws.String("next-token"),
+				}, nil).Once()
+
+				// Second page of alarms
+				m.On("DescribeAlarms", mock.Anything, &cloudwatch.DescribeAlarmsInput{
+					NextToken: aws.String("next-token"),
+				}).Return(&cloudwatch.DescribeAlarmsOutput{
+					MetricAlarms: []cloudwatchtypes.MetricAlarm{
+						{
+							AlarmName: aws.String("alarm2"),
+							AlarmArn:  aws.String("arn:aws:cloudwatch:us-west-2:123456789012:alarm:alarm2"),
+						},
+					},
+				}, nil).Once()
+
+				// First page of dashboards
+				m.On("ListDashboards", mock.Anything, &cloudwatch.ListDashboardsInput{
+					NextToken: (*string)(nil),
+				}).Return(&cloudwatch.ListDashboardsOutput{
+					DashboardEntries: []cloudwatchtypes.DashboardEntry{
+						{
+							DashboardName: aws.String("dashboard1"),
+							DashboardArn:  aws.String("arn:aws:cloudwatch:us-west-2:123456789012:dashboard/dashboard1"),
+						},
+					},
+					NextToken: aws.String("next-dash-token"),
+				}, nil).Once()
+
+				// Second page of dashboards
+				m.On("ListDashboards", mock.Anything, &cloudwatch.ListDashboardsInput{
+					NextToken: aws.String("next-dash-token"),
+				}).Return(&cloudwatch.ListDashboardsOutput{
+					DashboardEntries: []cloudwatchtypes.DashboardEntry{
+						{
+							DashboardName: aws.String("dashboard2"),
+							DashboardArn:  aws.String("arn:aws:cloudwatch:us-west-2:123456789012:dashboard/dashboard2"),
+						},
+					},
+				}, nil).Once()
+
+				// Mock TagResource for all resources
+				m.On("TagResource", mock.Anything, mock.Anything).Return(&cloudwatch.TagResourceOutput{}, nil)
+			},
+			expectLogs: []string{
+				"Starting CloudWatch resource tagging...",
+				"Successfully tagged CloudWatch alarm: alarm1",
+				"Successfully tagged CloudWatch alarm: alarm2",
+				"Successfully tagged CloudWatch dashboard: dashboard1",
+				"Successfully tagged CloudWatch dashboard: dashboard2",
+				"Completed CloudWatch resource tagging",
+			},
+		},
+		{
+			name: "Handle DescribeAlarms error",
+			tags: validTags,
+			setupMocks: func(m *MockCloudWatchClient) {
+				m.On("DescribeAlarms", mock.Anything, mock.Anything).
+					Return((*cloudwatch.DescribeAlarmsOutput)(nil), fmt.Errorf("API error"))
+
+				// ListDashboards succeeds but returns no dashboards
+				m.On("ListDashboards", mock.Anything, mock.Anything).
+					Return(&cloudwatch.ListDashboardsOutput{}, nil)
+			},
+			expectLogs: []string{
+				"Starting CloudWatch resource tagging...",
+				"Error describing CloudWatch alarms: API error",
+				"Completed CloudWatch resource tagging",
+			},
+		},
+		{
+			name: "Handle ListDashboards error",
+			tags: validTags,
+			setupMocks: func(m *MockCloudWatchClient) {
+				// DescribeAlarms succeeds but returns no alarms
+				m.On("DescribeAlarms", mock.Anything, mock.Anything).
+					Return(&cloudwatch.DescribeAlarmsOutput{}, nil)
+
+				m.On("ListDashboards", mock.Anything, mock.Anything).
+					Return((*cloudwatch.ListDashboardsOutput)(nil), fmt.Errorf("API error"))
+			},
+			expectLogs: []string{
+				"Starting CloudWatch resource tagging...",
+				"Error listing CloudWatch dashboards: API error",
+				"Completed CloudWatch resource tagging",
+			},
+		},
+		{
+			name: "Handle TagResource error",
+			tags: validTags,
+			setupMocks: func(m *MockCloudWatchClient) {
+				// Return one alarm
+				m.On("DescribeAlarms", mock.Anything, mock.Anything).
+					Return(&cloudwatch.DescribeAlarmsOutput{
+						MetricAlarms: []cloudwatchtypes.MetricAlarm{
+							{
+								AlarmName: aws.String("alarm1"),
+								AlarmArn:  aws.String("arn:aws:cloudwatch:us-west-2:123456789012:alarm:alarm1"),
+							},
+						},
+					}, nil)
+
+				// Return one dashboard
+				m.On("ListDashboards", mock.Anything, mock.Anything).
+					Return(&cloudwatch.ListDashboardsOutput{
+						DashboardEntries: []cloudwatchtypes.DashboardEntry{
+							{
+								DashboardName: aws.String("dashboard1"),
+								DashboardArn:  aws.String("arn:aws:cloudwatch:us-west-2:123456789012:dashboard/dashboard1"),
+							},
+						},
+					}, nil)
+
+				// Fail all TagResource calls
+				m.On("TagResource", mock.Anything, mock.Anything).
+					Return((*cloudwatch.TagResourceOutput)(nil), fmt.Errorf("tagging error"))
+			},
+			expectLogs: []string{
+				"Starting CloudWatch resource tagging...",
+				"Error tagging CloudWatch Alarm",
+				"Error tagging CloudWatch Dashboard",
+				"Completed CloudWatch resource tagging",
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Capture log output
+			var logBuffer bytes.Buffer
+			log.SetOutput(&logBuffer)
+			defer log.SetOutput(os.Stderr)
+
+			// Create mock client and set up expectations
+			mockClient := new(MockCloudWatchClient)
+			tc.setupMocks(mockClient)
+
+			// Create tagger with test configuration
+			tagger := &AWSResourceTagger{
+				ctx:       ctx,
+				cfg:       aws.Config{Region: "us-west-2"},
+				accountID: "123456789012",
+				region:    "us-west-2",
+				tags:      tc.tags,
+			}
+
+			// Execute tagging
+			tagger.tagCloudWatchResourcesWithClient(mockClient)
+
+			// Verify mock expectations
+			mockClient.AssertExpectations(t)
+
+			// Verify logs if expected
+			if !tc.skipLogTest {
+				logOutput := logBuffer.String()
+				for _, expectedLog := range tc.expectLogs {
+					assert.Contains(t, logOutput, expectedLog)
+				}
+			}
+		})
+	}
 }
