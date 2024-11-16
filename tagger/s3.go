@@ -1,17 +1,28 @@
 package tagger
 
 import (
+	"context"
 	"log"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/aws/aws-sdk-go/aws"
 )
 
-// tagS3Buckets tags S3 buckets
+// S3API interface for S3 client operations
+type S3API interface {
+	ListBuckets(ctx context.Context, params *s3.ListBucketsInput, optFns ...func(*s3.Options)) (*s3.ListBucketsOutput, error)
+	PutBucketTagging(ctx context.Context, params *s3.PutBucketTaggingInput, optFns ...func(*s3.Options)) (*s3.PutBucketTaggingOutput, error)
+}
+
+// tagS3Buckets is the main entry point that creates and uses the client
 func (t *AWSResourceTagger) tagS3Buckets() {
 	client := s3.NewFromConfig(t.cfg)
+	t.tagS3BucketsWithClient(client)
+}
 
+// tagS3BucketsWithClient handles the actual tagging logic with a provided client
+func (t *AWSResourceTagger) tagS3BucketsWithClient(client S3API) {
 	result, err := client.ListBuckets(t.ctx, &s3.ListBucketsInput{})
 	if err != nil {
 		log.Printf("Error listing S3 buckets: %v", err)
