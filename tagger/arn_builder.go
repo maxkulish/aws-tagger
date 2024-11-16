@@ -29,11 +29,6 @@ var (
 		Type:       "database",
 		ArnPattern: "arn:aws:glue:%s:%s:database/%s",
 	}
-	GlueTable = ResourceType{
-		Service:    "glue",
-		Type:       "table",
-		ArnPattern: "arn:aws:glue:%s:%s:catalog/database/%s/table/%s",
-	}
 	GlueConnection = ResourceType{
 		Service:    "glue",
 		Type:       "connection",
