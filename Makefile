@@ -53,7 +53,7 @@ test:
 coverage:
 	@echo "Running tests with coverage..."
 	$(GO) test -coverprofile=coverage.out ./...
-	$(GO) tool cover -html=coverage.out -o coverage.html
+	$(GO) tool cover -html=coverage.out
 
 ## Run go vet
 vet:

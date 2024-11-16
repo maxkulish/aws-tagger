@@ -105,7 +105,7 @@ func TestValidateTags(t *testing.T) {
 	}
 }
 
-func _TestTagAthenaWorkgroups(t *testing.T) {
+func TestTagAthenaWorkgroups(t *testing.T) {
 	ctx := context.Background()
 	tagger := &AWSResourceTagger{
 		ctx:       ctx,
@@ -136,12 +136,26 @@ func _TestTagAthenaWorkgroups(t *testing.T) {
 						},
 					}, nil)
 
+				expectedTags := []athenatypes.Tag{
+					{
+						Key:   aws.String("Environment"),
+						Value: aws.String("Test"),
+					},
+				}
+
+				// Use mock.MatchedBy to compare the important parts of the input
 				m.On("TagResource", ctx, mock.MatchedBy(func(input *athena.TagResourceInput) bool {
-					return aws.ToString(input.ResourceARN) == fmt.Sprintf("arn:aws:athena:us-west-2:123456789012:workgroup/workgroup1")
+					return strings.Contains(aws.ToString(input.ResourceARN), "workgroup/workgroup1") &&
+						len(input.Tags) == len(expectedTags) &&
+						aws.ToString(input.Tags[0].Key) == aws.ToString(expectedTags[0].Key) &&
+						aws.ToString(input.Tags[0].Value) == aws.ToString(expectedTags[0].Value)
 				})).Return(&athena.TagResourceOutput{}, nil)
 
 				m.On("TagResource", ctx, mock.MatchedBy(func(input *athena.TagResourceInput) bool {
-					return aws.ToString(input.ResourceARN) == fmt.Sprintf("arn:aws:athena:us-west-2:123456789012:workgroup/workgroup2")
+					return strings.Contains(aws.ToString(input.ResourceARN), "workgroup/workgroup2") &&
+						len(input.Tags) == len(expectedTags) &&
+						aws.ToString(input.Tags[0].Key) == aws.ToString(expectedTags[0].Key) &&
+						aws.ToString(input.Tags[0].Value) == aws.ToString(expectedTags[0].Value)
 				})).Return(&athena.TagResourceOutput{}, nil)
 			},
 			expectError: false,
@@ -168,8 +182,10 @@ func _TestTagAthenaWorkgroups(t *testing.T) {
 						},
 					}, nil)
 
-				m.On("TagResource", ctx, mock.Anything).
-					Return(&athena.TagResourceOutput{}, fmt.Errorf("tagging error"))
+				// Use mock.MatchedBy for the error case as well
+				m.On("TagResource", ctx, mock.MatchedBy(func(input *athena.TagResourceInput) bool {
+					return strings.Contains(aws.ToString(input.ResourceARN), "workgroup/workgroup1")
+				})).Return(&athena.TagResourceOutput{}, fmt.Errorf("tagging error"))
 			},
 			expectError: false, // We don't return error for individual tagging failures
 		},
